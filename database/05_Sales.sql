@@ -1,0 +1,101 @@
+USE QuanLySieuThi;
+GO
+
+DROP TRIGGER IF EXISTS trg_KhongXoaHoaDon;
+DROP TRIGGER IF EXISTS trg_CTHD_CapNhatKho;
+DROP PROCEDURE IF EXISTS sp_HuyHoaDon;
+DROP PROCEDURE IF EXISTS sp_ThanhToanHoaDon;
+DROP PROCEDURE IF EXISTS sp_ThemChiTietHoaDon;
+DROP PROCEDURE IF EXISTS sp_TaoHoaDon;
+DROP FUNCTION IF EXISTS fn_TinhDiemKhachHang;
+DROP FUNCTION IF EXISTS fn_TinhTongHoaDon;
+DROP FUNCTION IF EXISTS fn_TinhThanhTien;
+GO
+
+CREATE FUNCTION fn_TinhThanhTien(@SoLuong INT, @DonGia DECIMAL(18,2))
+RETURNS DECIMAL(18,2) AS BEGIN RETURN ISNULL(@SoLuong,0) * ISNULL(@DonGia,0); END;
+GO
+CREATE FUNCTION fn_TinhTongHoaDon(@MaHD VARCHAR(10))
+RETURNS DECIMAL(18,2) AS BEGIN RETURN ISNULL((SELECT SUM(SoLuong * DonGia) FROM CT_HOA_DON WHERE MaHD=@MaHD),0); END;
+GO
+CREATE FUNCTION fn_TinhDiemKhachHang(@TongTien DECIMAL(18,2))
+RETURNS INT AS BEGIN RETURN FLOOR(ISNULL(@TongTien,0) / 10000); END;
+GO
+
+CREATE TRIGGER trg_KhongXoaHoaDon ON HOA_DON INSTEAD OF DELETE AS
+BEGIN
+    RAISERROR(N'Không được xóa hóa đơn; hãy dùng sp_HuyHoaDon để lưu lịch sử.', 16, 1);
+    ROLLBACK TRANSACTION;
+END;
+GO
+
+CREATE TRIGGER trg_CTHD_CapNhatKho ON CT_HOA_DON AFTER INSERT, UPDATE, DELETE AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (SELECT 1 FROM HOA_DON HD JOIN (SELECT MaHD FROM inserted UNION SELECT MaHD FROM deleted) X ON X.MaHD=HD.MaHD
+               WHERE HD.TrangThai <> N'Chưa thanh toán')
+    BEGIN RAISERROR(N'Chỉ được thay đổi chi tiết hóa đơn chưa thanh toán.',16,1); ROLLBACK TRANSACTION; RETURN; END;
+
+    DECLARE @Delta TABLE(MaSP VARCHAR(10) PRIMARY KEY, Delta INT NOT NULL);
+    INSERT INTO @Delta SELECT MaSP, SUM(Delta) FROM (
+        SELECT MaSP, SoLuong AS Delta FROM inserted UNION ALL SELECT MaSP, -SoLuong FROM deleted
+    ) X GROUP BY MaSP;
+    IF EXISTS (SELECT 1 FROM SAN_PHAM SP JOIN @Delta D ON D.MaSP=SP.MaSP WHERE D.Delta > 0 AND SP.SoLuongTon < D.Delta)
+    BEGIN RAISERROR(N'Số lượng tồn kho không đủ.',16,1); ROLLBACK TRANSACTION; RETURN; END;
+    UPDATE SP SET SoLuongTon = SP.SoLuongTon - D.Delta FROM SAN_PHAM SP JOIN @Delta D ON D.MaSP=SP.MaSP WHERE D.Delta<>0;
+    UPDATE HD SET TongTien = dbo.fn_TinhTongHoaDon(HD.MaHD)
+    FROM HOA_DON HD WHERE HD.MaHD IN (SELECT MaHD FROM inserted UNION SELECT MaHD FROM deleted);
+END;
+GO
+
+CREATE PROCEDURE sp_TaoHoaDon @MaHD VARCHAR(10), @MaNV VARCHAR(10), @MaKH VARCHAR(10)=NULL
+AS BEGIN SET NOCOUNT ON;
+    IF EXISTS(SELECT 1 FROM HOA_DON WHERE MaHD=@MaHD) THROW 52001,N'Mã hóa đơn đã tồn tại.',1;
+    IF @MaKH IS NOT NULL AND NOT EXISTS(SELECT 1 FROM KHACH_HANG WHERE MaKH=@MaKH) THROW 52002,N'Khách hàng không tồn tại.',1;
+    IF NOT EXISTS(SELECT 1 FROM NHAN_VIEN WHERE MaNV=@MaNV) THROW 52003,N'Nhân viên không tồn tại.',1;
+    INSERT HOA_DON(MaHD,MaKH,MaNV) VALUES(@MaHD,@MaKH,@MaNV);
+END;
+GO
+
+CREATE PROCEDURE sp_ThemChiTietHoaDon @MaHD VARCHAR(10), @MaSP VARCHAR(10), @SoLuong INT
+AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRY BEGIN TRANSACTION;
+        IF NOT EXISTS(SELECT 1 FROM HOA_DON WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán') THROW 52004,N'Hóa đơn không tồn tại hoặc không còn mở.',1;
+        IF @SoLuong<=0 THROW 52005,N'Số lượng bán phải lớn hơn 0.',1;
+        DECLARE @Gia DECIMAL(18,2)=(SELECT GiaBan FROM SAN_PHAM WITH(UPDLOCK,HOLDLOCK) WHERE MaSP=@MaSP);
+        IF @Gia IS NULL THROW 52006,N'Sản phẩm không tồn tại.',1;
+        IF EXISTS(SELECT 1 FROM CT_HOA_DON WHERE MaHD=@MaHD AND MaSP=@MaSP)
+            UPDATE CT_HOA_DON SET SoLuong=SoLuong+@SoLuong WHERE MaHD=@MaHD AND MaSP=@MaSP;
+        ELSE INSERT CT_HOA_DON(MaHD,MaSP,SoLuong,DonGia) VALUES(@MaHD,@MaSP,@SoLuong,@Gia);
+        COMMIT;
+    END TRY BEGIN CATCH IF XACT_STATE()<>0 ROLLBACK; THROW; END CATCH;
+END;
+GO
+
+CREATE PROCEDURE sp_ThanhToanHoaDon @MaTT VARCHAR(10), @MaHD VARCHAR(10), @PhuongThuc NVARCHAR(30)
+AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRY BEGIN TRANSACTION;
+        DECLARE @Tong DECIMAL(18,2), @MaKH VARCHAR(10);
+        SELECT @Tong=TongTien,@MaKH=MaKH FROM HOA_DON WITH(UPDLOCK,HOLDLOCK) WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán';
+        IF @Tong IS NULL THROW 52007,N'Hóa đơn không tồn tại hoặc không ở trạng thái chờ thanh toán.',1;
+        IF @Tong<=0 THROW 52008,N'Hóa đơn chưa có sản phẩm.',1;
+        IF EXISTS(SELECT 1 FROM THANH_TOAN WHERE MaTT=@MaTT OR MaHD=@MaHD) THROW 52009,N'Hóa đơn hoặc mã thanh toán đã được thanh toán.',1;
+        IF @PhuongThuc NOT IN(N'Tiền mặt',N'Chuyển khoản',N'Thẻ',N'Ví điện tử') THROW 52010,N'Phương thức thanh toán không hợp lệ.',1;
+        INSERT THANH_TOAN(MaTT,MaHD,SoTien,PhuongThuc) VALUES(@MaTT,@MaHD,@Tong,@PhuongThuc);
+        UPDATE HOA_DON SET TrangThai=N'Đã thanh toán' WHERE MaHD=@MaHD;
+        IF @MaKH IS NOT NULL UPDATE KHACH_HANG SET DiemTichLuy=DiemTichLuy+dbo.fn_TinhDiemKhachHang(@Tong) WHERE MaKH=@MaKH;
+        COMMIT;
+    END TRY BEGIN CATCH IF XACT_STATE()<>0 ROLLBACK; THROW; END CATCH;
+END;
+GO
+
+CREATE PROCEDURE sp_HuyHoaDon @MaHD VARCHAR(10)
+AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
+    BEGIN TRY BEGIN TRANSACTION;
+        IF NOT EXISTS(SELECT 1 FROM HOA_DON WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán') THROW 52011,N'Chỉ được hủy hóa đơn chưa thanh toán.',1;
+        DELETE FROM CT_HOA_DON WHERE MaHD=@MaHD;
+        UPDATE HOA_DON SET TrangThai=N'Đã hủy' WHERE MaHD=@MaHD;
+        COMMIT;
+    END TRY BEGIN CATCH IF XACT_STATE()<>0 ROLLBACK; THROW; END CATCH;
+END;
+GO

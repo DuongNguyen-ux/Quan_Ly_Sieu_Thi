@@ -1,0 +1,27 @@
+USE QuanLySieuThi;
+GO
+DROP VIEW IF EXISTS vw_SanPhamSapHet;
+DROP VIEW IF EXISTS vw_SanPhamBanChay;
+DROP VIEW IF EXISTS vw_DoanhThuTheoNgay;
+DROP VIEW IF EXISTS vw_ChiTietHoaDon;
+GO
+CREATE VIEW vw_ChiTietHoaDon AS
+SELECT HD.MaHD, HD.NgayLap, HD.TrangThai, KH.HoTen AS TenKhachHang,
+       NV.HoTen AS NhanVien, SP.MaSP, SP.TenSP, CT.SoLuong, CT.DonGia,
+       CT.SoLuong*CT.DonGia AS ThanhTien
+FROM HOA_DON HD JOIN CT_HOA_DON CT ON CT.MaHD=HD.MaHD
+JOIN SAN_PHAM SP ON SP.MaSP=CT.MaSP LEFT JOIN KHACH_HANG KH ON KH.MaKH=HD.MaKH
+JOIN NHAN_VIEN NV ON NV.MaNV=HD.MaNV;
+GO
+CREATE VIEW vw_DoanhThuTheoNgay AS
+SELECT CONVERT(date,NgayLap) AS Ngay, COUNT(*) AS SoHoaDon, SUM(TongTien) AS DoanhThu
+FROM HOA_DON WHERE TrangThai=N'Đã thanh toán' GROUP BY CONVERT(date,NgayLap);
+GO
+CREATE VIEW vw_SanPhamBanChay AS
+SELECT SP.MaSP, SP.TenSP, SUM(CT.SoLuong) AS SoLuongDaBan, SUM(CT.SoLuong*CT.DonGia) AS DoanhThu
+FROM CT_HOA_DON CT JOIN HOA_DON HD ON HD.MaHD=CT.MaHD JOIN SAN_PHAM SP ON SP.MaSP=CT.MaSP
+WHERE HD.TrangThai=N'Đã thanh toán' GROUP BY SP.MaSP,SP.TenSP;
+GO
+CREATE VIEW vw_SanPhamSapHet AS
+SELECT MaSP,TenSP,SoLuongTon FROM SAN_PHAM WHERE SoLuongTon <= 20;
+GO
