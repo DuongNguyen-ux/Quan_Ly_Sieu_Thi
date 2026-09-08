@@ -54,9 +54,11 @@ BEGIN
     SET NOCOUNT ON; SET XACT_ABORT ON;
     BEGIN TRY
         BEGIN TRANSACTION;
+        -- Level 1: Khóa PHIEU_NHAP trước
         IF NOT EXISTS (SELECT 1 FROM PHIEU_NHAP WITH (UPDLOCK, HOLDLOCK) WHERE MaPN = @MaPN)
             THROW 51006, N'Phiếu nhập không tồn tại.', 1;
-        IF NOT EXISTS (SELECT 1 FROM SAN_PHAM WHERE MaSP = @MaSP)
+        -- Level 2: Khóa SAN_PHAM sau
+        IF NOT EXISTS (SELECT 1 FROM SAN_PHAM WITH (UPDLOCK, HOLDLOCK) WHERE MaSP = @MaSP)
             THROW 51007, N'Sản phẩm không tồn tại.', 1;
         IF @SoLuongNhap <= 0 THROW 51008, N'Số lượng nhập phải lớn hơn 0.', 1;
         IF @DonGiaNhap <= 0 THROW 51009, N'Đơn giá nhập phải lớn hơn 0.', 1;

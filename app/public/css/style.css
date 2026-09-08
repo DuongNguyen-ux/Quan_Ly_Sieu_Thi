@@ -1,0 +1,66 @@
+/* Custom Styling for Supermarket POS */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: #f8fafc;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Product Card Hover Effect */
+.product-card {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.product-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+/* Receipt Print Styling */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #receipt-modal-content, #receipt-modal-content * {
+    visibility: visible;
+  }
+  #receipt-modal-content {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    padding: 10px;
+    background: white;
+    color: black;
+    box-shadow: none;
+    font-size: 12px;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Thermal POS Receipt simulation */
+.receipt-paper {
+  background: #fff;
+  border: 1px dashed #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+  font-family: 'Courier New', Courier, monospace;
+}
+

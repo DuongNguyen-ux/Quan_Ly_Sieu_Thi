@@ -82,15 +82,26 @@ Quan_Ly_Sieu_Thi/
 │   └── 06_Reports.sql        # Script tạo 4 View báo cáo & thống kê
 └── tests/
     └── 07_Tests.sql          # Script kịch bản kiểm thử tự động (Test Cases)
+├── tests/
+│   └── 07_Tests.sql          # Script kiểm thử tự động cô lập (8 Test Cases)
+└── app/                      # Ứng dụng Web Quản lý Siêu thị Fullstack
+    ├── package.json          # Cấu hình Express, mssql, msnodesqlv8
+    ├── server.js             # Khởi tạo Web Server & RESTful API
+    ├── config/db.js          # Kết nối CSDL SQL Server (ODBC Driver 17)
+    ├── routes/               # Các API routes (POS, Inventory, Reports, Partners)
+    └── public/               # Giao diện Web SPA (POS Thu ngân & Dashboard)
 ```
 
 ---
 
 ## 5. Hướng dẫn cài đặt & Chạy script
+## 5. Hướng dẫn cài đặt & Khởi chạy
 
 ### Thứ tự thực thi (Bắt buộc)
+### 5.1. Khởi tạo Cơ sở dữ liệu SQL Server (Bắt buộc trước)
 
 Để cơ sở dữ liệu được khởi tạo đúng và không bị lỗi phụ thuộc khóa ngoại, hãy chạy các file SQL theo thứ tự từ `01` đến `07`:
+Mở Terminal / PowerShell tại thư mục dự án và chạy theo thứ tự từ `01` đến `07` (sử dụng `-f 65001` để chuẩn hóa font tiếng Việt):
 
 1. `database/01_CreateDatabase.sql` *(Tạo Database QuanLySieuThi)*
 2. `database/02_CreateTables.sql` *(Tạo cấu trúc 10 bảng & các ràng buộc)*
@@ -99,14 +110,25 @@ Quan_Ly_Sieu_Thi/
 5. `database/05_Sales.sql` *(Cài đặt thủ tục, hàm, trigger bán hàng & thanh toán)*
 6. `database/06_Reports.sql` *(Cài đặt các View báo cáo thống kê)*
 7. `tests/07_Tests.sql` *(Chạy bộ kiểm thử chức năng - Tùy chọn)*
+```bash
+sqlcmd -S . -E -f 65001 -i database\01_CreateDatabase.sql
+sqlcmd -S . -E -f 65001 -i database\02_CreateTables.sql
+sqlcmd -S . -E -f 65001 -i database\03_SeedData.sql
+sqlcmd -S . -E -f 65001 -i database\04_Inventory.sql
+sqlcmd -S . -E -f 65001 -i database\05_Sales.sql
+sqlcmd -S . -E -f 65001 -i database\06_Reports.sql
+sqlcmd -S . -E -f 65001 -i tests\07_Tests.sql
+```
 
 ### Cách 1: Thực thi trong SSMS (SQL Server Management Studio)
 1. Mở SSMS và kết nối tới SQL Server Instance của bạn.
 2. Mở từng file `.sql` theo đúng thứ tự trên.
 3. Bấm **Execute** (hoặc phím `F5`) để chạy từng file.
+### 5.2. Khởi chạy Ứng dụng Web Quản lý Siêu thị (Web POS & Dashboard)
 
 ### Cách 2: Thực thi bằng Command Line (`sqlcmd`)
 Mở Terminal / PowerShell tại thư mục dự án và chạy các lệnh sau:
+Ứng dụng được xây dựng trên **Node.js (Express)** kết nối trực tiếp với SQL Server qua Windows Integrated Authentication:
 
 ```bash
 sqlcmd -S . -i database\01_CreateDatabase.sql
@@ -116,9 +138,21 @@ sqlcmd -S . -i database\04_Inventory.sql
 sqlcmd -S . -i database\05_Sales.sql
 sqlcmd -S . -i database\06_Reports.sql
 sqlcmd -S . -i tests\07_Tests.sql
+# 1. Di chuyển vào thư mục app
+cd app
+
+# 2. Khởi động Web Server
+node server.js
 ```
 
 > ⚠️ **Lưu ý:** File `02_CreateTables.sql` có lệnh `DROP TABLE IF EXISTS` theo đúng thứ tự phụ thuộc khóa ngoại, giúp bạn có thể chạy lại script an toàn khi cần reset cấu trúc bảng.
+Sau đó mở trình duyệt và truy cập: **`http://localhost:3000`**
+
+Các tính năng nổi bật của ứng dụng:
+- **🛒 POS Thu ngân:** Chọn thu ngân, khách hàng (hỗ trợ thêm nhanh khách mới), chọn mặt hàng từ danh mục, giỏ hàng tự động tính tiền, thanh toán đa phương thức và in hóa đơn bán lẻ nhiệt.
+- **📦 Nhập kho:** Lập phiếu nhập hàng nhiều sản phẩm, kích hoạt trigger tự động cộng tồn kho, theo dõi cảnh báo sản phẩm sắp hết và lịch sử nhập.
+- **📊 Báo cáo & Doanh thu:** 4 thẻ KPI tổng quan, biểu đồ đường/cột Chart.js doanh thu theo ngày và danh sách sản phẩm bán chạy nhất.
+- **👥 Đối tác & Nhân sự:** Quản lý điểm tích lũy khách hàng, danh sách nhân viên và nhà cung cấp.
 
 ---
 
@@ -270,11 +304,11 @@ NHA_CUNG_CAP NHAN_VIEN                      NHAN_VIEN KHACH_HANG (NCho/1Null)
 | Tên Stored Procedure | Chức năng & Xử lý nghiệp vụ |
 | :--- | :--- |
 | `sp_ThemPhieuNhap` | Tạo phiếu nhập mới. Kiểm tra mã trùng, kiểm tra sự tồn tại của NCC và NV, kiểm tra ngày nhập không ở tương lai. |
-| `sp_ThemChiTietPhieuNhap`| Thêm chi tiết phiếu nhập trong `TRANSACTION`. Kiểm tra phiếu nhập, sản phẩm, số lượng/đơn giá > 0. Kích hoạt trigger tự động cập nhật tồn kho và tổng tiền phiếu nhập. |
+| `sp_ThemChiTietPhieuNhap`| Thêm chi tiết phiếu nhập trong `TRANSACTION`. Khóa phân tầng chuẩn: `PHIEU_NHAP` (Level 1) $\rightarrow$ `SAN_PHAM` (Level 2) bằng `UPDLOCK, HOLDLOCK`. Kiểm tra số lượng/đơn giá > 0. Kích hoạt trigger tự động cập nhật tồn kho và tổng tiền phiếu nhập. |
 | `sp_TaoHoaDon` | Tạo hóa đơn bán hàng mới ở trạng thái `Chưa thanh toán`. Cho phép `@MaKH` NULL (khách vãng lai). |
-| `sp_ThemChiTietHoaDon` | Thêm sản phẩm vào hóa đơn chưa thanh toán. Tự động lấy giá bán hiện tại của sản phẩm. Nếu sản phẩm đã có trong hóa đơn thì cộng dồn số lượng. Kích hoạt trigger kiểm tra tồn kho và trừ tồn kho. |
-| `sp_ThanhToanHoaDon` | Thực hiện thanh toán hóa đơn. Kiểm tra trạng thái hóa đơn, số tiền > 0, phương thức hợp lệ. Đổi trạng thái hóa đơn thành `Đã thanh toán`, tạo bản ghi `THANH_TOAN` và tự động tích điểm cho khách hàng. |
-| `sp_HuyHoaDon` | Hủy hóa đơn chưa thanh toán trong `TRANSACTION`. Xóa các chi tiết hóa đơn (trigger sẽ hoàn trả số lượng vào kho) và chuyển trạng thái hóa đơn thành `Đã hủy`. |
+| `sp_ThemChiTietHoaDon` | Thêm sản phẩm vào hóa đơn chưa thanh toán. Khóa phân tầng chuẩn: `HOA_DON` (Level 1) $\rightarrow$ `SAN_PHAM` (Level 2) bằng `UPDLOCK, HOLDLOCK` để triệt tiêu nguy cơ Deadlock khi nhiều quầy giao dịch. Tự động lấy giá bán hiện tại. Nếu sản phẩm đã có thì cộng dồn số lượng. |
+| `sp_ThanhToanHoaDon` | Thực hiện thanh toán hóa đơn. Khóa `HOA_DON` (Level 1). Kiểm tra trạng thái hóa đơn, số tiền > 0, phương thức hợp lệ. Đổi trạng thái hóa đơn thành `Đã thanh toán`, tạo bản ghi `THANH_TOAN` và tự động tích điểm cho khách hàng. |
+| `sp_HuyHoaDon` | Hủy hóa đơn chưa thanh toán trong `TRANSACTION`. Khóa `HOA_DON` (Level 1) trước khi xóa chi tiết (tránh Deadlock). Trigger hoàn trả số lượng vào kho và chuyển trạng thái hóa đơn thành `Đã hủy`. |
 
 ### 10.3. Triggers (Cò dại / Bẫy sự kiện)
 
@@ -334,7 +368,10 @@ NHA_CUNG_CAP NHAN_VIEN                      NHAN_VIEN KHACH_HANG (NCho/1Null)
 
 ## 12. Kiểm thử hệ thống (Test Cases)
 
-Bộ kiểm thử được viết trong file `tests/07_Tests.sql` nhằm xác minh hoạt động của toàn bộ hệ thống:
+Bộ kiểm thử được thiết kế theo kiến trúc **Isolated Test Harness** trong file `tests/07_Tests.sql` với các ưu điểm kỹ thuật:
+- **Zero Side-effects:** Sử dụng cơ chế Snapshot & Teardown tự động khôi phục dữ liệu nguyên trạng sau khi chạy xong.
+- **Tính khả lặp (Idempotent):** Có thể chạy kiểm thử liên tục nhiều lần mà không bị lỗi trùng khóa chính.
+- **Automated Assertions:** So sánh trực tiếp giá trị kỳ vọng (*Expected*) vs giá trị thực tế (*Actual*).
 
 | Test Case ID | Kịch bản kiểm thử | Hành vi mong đợi | Kết quả |
 | :--: | :--- | :--- | :--: |
@@ -344,6 +381,8 @@ Bộ kiểm thử được viết trong file `tests/07_Tests.sql` nhằm xác mi
 | **TC04** | Bán sản phẩm với số lượng vượt tồn kho (`999999`) | Trigger ném lỗi tồn kho không đủ, giao dịch bị `ROLLBACK` | **PASS** |
 | **TC05** | Hủy hóa đơn chưa thanh toán (`sp_HuyHoaDon`) | Hóa đơn đổi thành `Đã hủy`, số lượng sản phẩm được hoàn trả lại kho | **PASS** |
 | **TC06** | Xóa trực tiếp hóa đơn (`DELETE FROM HOA_DON`) | Trigger `trg_KhongXoaHoaDon` chặn thao tác, thông báo dùng `sp_HuyHoaDon` | **PASS** |
+| **TC07** | Bán hàng, Thanh toán (`sp_ThanhToanHoaDon`) & Tích điểm | Hóa đơn chuyển `Đã thanh toán`, ghi nhận bản ghi `THANH_TOAN` và tích điểm tự động | **PASS** |
+| **TC08** | Khóa & Trạng thái: Chặn sửa đổi hóa đơn đã thanh toán | Procedure ném lỗi `52004`, khóa Level 1 bảo vệ toàn vẹn trạng thái | **PASS** |
 
 ---
 

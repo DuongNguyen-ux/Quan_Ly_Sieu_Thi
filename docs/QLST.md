@@ -183,36 +183,37 @@ Hóa đơn không bị xóa khỏi cơ sở dữ liệu. Trigger trg_KhongXoaHoa
 - vw_SanPhamBanChay.
 - vw_SanPhamSapHet.
 
-## 13. Transaction và xử lý lỗi
+## 13. Transaction, Quản lý khóa và Xử lý lỗi
 
-Các nghiệp vụ cập nhật nhiều bảng dùng transaction. Nếu một bước thất bại, rollback giúp tránh tình trạng đã trừ kho nhưng chưa ghi giao dịch hoặc đã ghi thanh toán nhưng chưa đổi trạng thái.
+### 13.1. Quản lý Transaction & ACID
+Các nghiệp vụ cập nhật nhiều bảng dùng transaction. Nếu một bước thất bại, rollback giúp tránh tình trạng đã trừ kho nhưng chưa ghi giao dịch hoặc đã ghi thanh toán nhưng chưa đổi trạng thái. Các procedure dùng `TRY...CATCH`, `XACT_ABORT ON` và `THROW` để trả lỗi cho chương trình gọi.
 
-Các procedure dùng TRY...CATCH, XACT_ABORT ON và THROW để trả lỗi cho chương trình gọi.
+### 13.2. Chuẩn hóa phân tầng khóa (Lock Hierarchy Standard - Chống Deadlock)
+Để triệt tiêu nguy cơ xảy ra Deadlock khi nhiều nhân viên thao tác đồng thời trên cùng hóa đơn hoặc sản phẩm, hệ thống áp dụng quy tắc phân tầng chiếm giữ khóa nhất quán từ Cha đến Con:
+$$\text{Level 1: Bảng cha (HOA\_DON / PHIEU\_NHAP)} \longrightarrow \text{Level 2: Dữ liệu tham chiếu (SAN\_PHAM)} \longrightarrow \text{Level 3: Bảng chi tiết (CT\_...)}$$
 
-## 14. Kiểm thử
+- Trong `sp_ThemChiTietHoaDon`, `sp_HuyHoaDon` và `sp_ThanhToanHoaDon`: Luôn khóa bản ghi `HOA_DON` trước bằng `WITH (UPDLOCK, HOLDLOCK)`, sau đó mới xin khóa `SAN_PHAM`.
+- Trong `sp_ThemChiTietPhieuNhap`: Khóa bản ghi `PHIEU_NHAP` trước bằng `WITH (UPDLOCK, HOLDLOCK)`, sau đó mới xin khóa `SAN_PHAM`.
+- Cơ chế này đảm bảo đồ thị chờ tài nguyên không bao giờ hình thành chu trình (No cycle in wait-for graph), bảo vệ hệ thống hoạt động ổn định ở tải đồng thời cao.
 
-### Kiểm thử hợp lệ
+## 14. Kiểm thử hệ thống (Isolated Test Harness)
 
-- Tạo phiếu nhập với dữ liệu tồn tại.
-- Thêm nhiều sản phẩm vào một phiếu nhập.
-- Cập nhật số lượng nhập và kiểm tra tồn kho.
-- Tạo hóa đơn và bán trong giới hạn tồn.
-- Thanh toán bằng phương thức hợp lệ.
-- Kiểm tra tổng tiền, điểm và doanh thu.
-- Hủy hóa đơn chưa thanh toán và kiểm tra hoàn kho.
+File kiểm thử `tests/07_Tests.sql` được xây dựng theo kiến trúc kiểm thử cô lập (*Isolated Test Suite*):
+1. **Pre-test Cleanup:** Dọn sạch dữ liệu thử nghiệm trước khi bắt đầu.
+2. **Snapshot Isolation:** Lưu lại ảnh chụp tồn kho và điểm thưởng vào bảng tạm `#Snap_SP` và `#Snap_KH`.
+3. **Automated Assertions:** So sánh trực tiếp giá trị kỳ vọng vs thực tế (8 Test Cases) và ghi nhận kết quả `PASS`/`FAIL` vào bảng tổng hợp.
+4. **Guaranteed Teardown:** Tự động dọn dẹp các bản ghi test (`TST%`) và hoàn nguyên 100% dữ liệu tồn kho, điểm thưởng về đúng số liệu gốc (*Zero Side-effects*).
+5. **Idempotence:** Kịch bản có thể chạy lặp lại vô hạn lần mà không làm bẩn CSDL hay phát sinh lỗi trùng khóa.
 
-### Kiểm thử không hợp lệ
-
-- Trùng mã phiếu hoặc mã hóa đơn.
-- Nhà cung cấp, nhân viên hoặc sản phẩm không tồn tại.
-- Số lượng hoặc đơn giá không hợp lệ.
-- Bán vượt tồn kho.
-- Thanh toán hóa đơn rỗng hoặc thanh toán hai lần.
-- Hủy hóa đơn đã thanh toán.
-- Xóa hóa đơn trực tiếp.
-- INSERT nhiều dòng để kiểm tra trigger.
-
-File chạy kiểm thử là tests/07_Tests.sql.
+### Các kịch bản kiểm thử chính
+- **TC01:** Nhập hàng nhiều dòng và trigger cập nhật tồn kho, tổng tiền.
+- **TC02:** Cập nhật chi tiết nhập (Delta UPDATE).
+- **TC03:** Chặn số lượng nhập âm (mã lỗi 51008).
+- **TC04:** Chặn bán hàng vượt tồn kho.
+- **TC05:** Hủy hóa đơn chưa thanh toán và hoàn kho tự động.
+- **TC06:** Chặn xóa trực tiếp hóa đơn (INSTEAD OF DELETE trigger).
+- **TC07:** Quy trình thanh toán và tự động tích lũy điểm thưởng.
+- **TC08:** Khóa Level 1 chặn sửa đổi hóa đơn đã thanh toán.
 
 ## 15. Cách triển khai
 

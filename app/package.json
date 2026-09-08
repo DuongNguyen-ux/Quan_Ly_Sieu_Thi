@@ -1,0 +1,16 @@
+{
+  "name": "quan-ly-sieu-thi-app",
+  "version": "1.0.0",
+  "description": "Ứng dụng Quản lý Siêu thị - POS & Dashboard kết nối SQL Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "reseed": "node reseed_utf8.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "msnodesqlv8": "^5.3.0",
+    "mssql": "^12.7.0"
+  }
+}

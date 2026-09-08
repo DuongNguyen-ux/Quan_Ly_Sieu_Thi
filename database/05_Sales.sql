@@ -60,8 +60,11 @@ GO
 CREATE PROCEDURE sp_ThemChiTietHoaDon @MaHD VARCHAR(10), @MaSP VARCHAR(10), @SoLuong INT
 AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
     BEGIN TRY BEGIN TRANSACTION;
-        IF NOT EXISTS(SELECT 1 FROM HOA_DON WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán') THROW 52004,N'Hóa đơn không tồn tại hoặc không còn mở.',1;
+        -- Level 1: Khóa HOA_DON trước để chuẩn hóa phân tầng khóa, chống Deadlock
+        IF NOT EXISTS(SELECT 1 FROM HOA_DON WITH(UPDLOCK,HOLDLOCK) WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán')
+            THROW 52004,N'Hóa đơn không tồn tại hoặc không còn mở.',1;
         IF @SoLuong<=0 THROW 52005,N'Số lượng bán phải lớn hơn 0.',1;
+        -- Level 2: Khóa SAN_PHAM sau khi đã giữ khóa trên HOA_DON
         DECLARE @Gia DECIMAL(18,2)=(SELECT GiaBan FROM SAN_PHAM WITH(UPDLOCK,HOLDLOCK) WHERE MaSP=@MaSP);
         IF @Gia IS NULL THROW 52006,N'Sản phẩm không tồn tại.',1;
         IF EXISTS(SELECT 1 FROM CT_HOA_DON WHERE MaHD=@MaHD AND MaSP=@MaSP)
@@ -75,6 +78,7 @@ GO
 CREATE PROCEDURE sp_ThanhToanHoaDon @MaTT VARCHAR(10), @MaHD VARCHAR(10), @PhuongThuc NVARCHAR(30)
 AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
     BEGIN TRY BEGIN TRANSACTION;
+        -- Level 1: Khóa HOA_DON trước
         DECLARE @Tong DECIMAL(18,2), @MaKH VARCHAR(10);
         SELECT @Tong=TongTien,@MaKH=MaKH FROM HOA_DON WITH(UPDLOCK,HOLDLOCK) WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán';
         IF @Tong IS NULL THROW 52007,N'Hóa đơn không tồn tại hoặc không ở trạng thái chờ thanh toán.',1;
@@ -92,7 +96,9 @@ GO
 CREATE PROCEDURE sp_HuyHoaDon @MaHD VARCHAR(10)
 AS BEGIN SET NOCOUNT ON; SET XACT_ABORT ON;
     BEGIN TRY BEGIN TRANSACTION;
-        IF NOT EXISTS(SELECT 1 FROM HOA_DON WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán') THROW 52011,N'Chỉ được hủy hóa đơn chưa thanh toán.',1;
+        -- Level 1: Khóa HOA_DON trước khi xóa chi tiết hóa đơn (tránh Deadlock với sp_ThemChiTietHoaDon)
+        IF NOT EXISTS(SELECT 1 FROM HOA_DON WITH(UPDLOCK,HOLDLOCK) WHERE MaHD=@MaHD AND TrangThai=N'Chưa thanh toán')
+            THROW 52011,N'Chỉ được hủy hóa đơn chưa thanh toán.',1;
         DELETE FROM CT_HOA_DON WHERE MaHD=@MaHD;
         UPDATE HOA_DON SET TrangThai=N'Đã hủy' WHERE MaHD=@MaHD;
         COMMIT;
